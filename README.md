@@ -108,6 +108,14 @@ All user endpoints require `Authorization: Bearer <access_token>`. Device endpoi
 
 Plant profile defaults: succulent 20%, indoor 30%, herb 35%, tomato 40%. They are starting points, not horticultural guarantees; adjust for the plant and sensor calibration.
 
+## Screenshots
+
+See [`screenshots/README.md`](screenshots/README.md) for the capture checklist. The screenshot can be added after running the simulator, with account and device credentials removed.
+
+## GitHub and social drafts
+
+Repository metadata, topic tags, push steps, and the LinkedIn/Instagram post drafts are in [`docs/share-kit.md`](docs/share-kit.md).
+
 ## Tests and build
 
 ```bash

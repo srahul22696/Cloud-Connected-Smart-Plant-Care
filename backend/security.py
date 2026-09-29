@@ -43,3 +43,6 @@ def read_token(token: str) -> int:
 
 def new_device_key() -> str: return secrets.token_urlsafe(32)
 def hash_device_key(key: str) -> str: return hashlib.sha256(key.encode()).hexdigest()
+
+def verify_device_key(key: str, expected_hash: str) -> bool:
+    return hmac.compare_digest(hash_device_key(key), expected_hash)

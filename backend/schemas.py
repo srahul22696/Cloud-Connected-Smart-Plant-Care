@@ -9,9 +9,11 @@ class RegisterIn(BaseModel):
     @classmethod
     def normalize_email(cls, v):
         v = v.strip().lower()
-        if v.count("@") != 1 or any(c.isspace() for c in v): raise ValueError("Enter a valid email address")
-        local, domain = v.split("@")
-        if not local or "." not in domain or domain.startswith(".") or domain.endswith("."): raise ValueError("Enter a valid email address")
+        import re
+        pattern=r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+        if not re.fullmatch(pattern, v): raise ValueError("Enter a valid email address")
+        local = v.split("@", 1)[0]
+        if local.startswith(".") or local.endswith(".") or ".." in local: raise ValueError("Enter a valid email address")
         return v
 
 class LoginIn(BaseModel):

@@ -16,6 +16,10 @@ def add_alert_once(db: Session, device_id: str, alert_type: str, level: str, mes
 def decide_watering(db: Session, device: Device, reading: Reading, trigger_type="automatic", duration_seconds=None):
     if trigger_type == "automatic":
         if not device.auto_water or reading.soil_moisture >= device.threshold: return None
+    # Lock the per-device row in PostgreSQL so simultaneous dry readings/manual requests
+    # cannot both pass cooldown and queue two pump pulses.
+    locked_device=db.scalar(select(Device).where(Device.id==device.id).with_for_update())
+    if locked_device is not None: device=locked_device
     now = datetime.now(timezone.utc)
     recent = db.scalar(select(WateringEvent).where(WateringEvent.device_id == device.id, WateringEvent.created_at >= now - timedelta(seconds=settings.watering_cooldown_seconds)).order_by(WateringEvent.created_at.desc()).limit(1))
     if recent: return None

@@ -24,3 +24,7 @@
 | TC20 | Multiple plants | Add two device IDs under one owner | Independent thresholds, data, status, and history |
 | TC21 | Threshold config | Set value outside 5–90% | 422, prior setting unchanged |
 | TC22 | Auto mode | Turn automation off with dry reading | Reading stored; no automatic event |
+
+## Automated run result
+
+**Result on 2026-09-28:** 12 API tests passed. The dashboard production build completed successfully. A live simulator cycle also uploaded a synthetic sample, polled a queued action, and applied the virtual watering response. Manual browser acceptance beyond the locally seeded dashboard was not run as a separate E2E suite.

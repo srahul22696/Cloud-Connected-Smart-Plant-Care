@@ -1,0 +1,1 @@
+Save a sanitized dashboard screenshot here as `dashboard.png` after you capture it from the local or deployed app. Remove account details and device keys before adding the image to the public repository. The social post drafts refer to this file.

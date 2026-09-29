@@ -68,3 +68,11 @@ def test_alerts_acknowledge_and_history(client,account,device):
     assert any(a['alert_type']=='low_moisture' for a in alerts)
     aid=alerts[0]['id']; assert client.put(f'/api/alerts/{aid}/acknowledge',headers=account).json()['acknowledged']
     assert client.get('/api/devices/PLANT-001/history',headers=account).status_code==200
+
+
+def test_manual_water_rejected_when_device_offline(client,account,device,monkeypatch):
+    client.post('/api/sensors/data',headers=device['headers'],json=sample())
+    from backend.config import settings
+    monkeypatch.setattr(settings,'device_offline_seconds',0)
+    result=client.post('/api/devices/PLANT-001/water',headers=account,json={'duration_seconds':3})
+    assert result.status_code==409

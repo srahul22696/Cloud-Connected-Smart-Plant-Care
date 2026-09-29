@@ -14,7 +14,7 @@ from backend.config import settings
 from backend.database import Base, engine, get_db
 from backend.models import User, Device, Reading, WateringEvent, Alert
 from backend.schemas import RegisterIn, LoginIn, TokenOut, DeviceCreate, DeviceOut, ThresholdIn, AutoWaterIn, ReadingIn, WaterIn
-from backend.security import hash_password, verify_password, issue_token, read_token, new_device_key, hash_device_key
+from backend.security import hash_password, verify_password, issue_token, read_token, new_device_key, hash_device_key, verify_device_key
 from backend.logic import PROFILE_THRESHOLDS, latest_reading, decide_watering, add_alert_once, device_status
 
 logging.basicConfig(level=logging.INFO)
@@ -116,7 +116,7 @@ def set_auto(device_id: str, payload: AutoWaterIn, db: Session = Depends(get_db)
 def ingest(payload: ReadingIn, x_device_key: Optional[str] = Header(default=None), db: Session = Depends(get_db)):
     if not x_device_key or len(x_device_key)>128: raise HTTPException(401,"X-Device-Key required")
     d=db.get(Device,payload.device_id)
-    if not d or hash_device_key(x_device_key) != d.device_key_hash: raise HTTPException(401,"Invalid device credentials")
+    if not d or not verify_device_key(x_device_key, d.device_key_hash): raise HTTPException(401,"Invalid device credentials")
     existing=db.scalar(select(Reading).where(Reading.device_id==d.id, Reading.event_id==payload.event_id))
     if existing: return {"accepted":True,"duplicate":True,"watering":"unchanged"}
     row=Reading(device_id=d.id,event_id=payload.event_id,soil_moisture=payload.soil_moisture,temperature=payload.temperature,humidity=payload.humidity,light_level=payload.light_level,water_tank_level=payload.water_tank_level,timestamp=payload.timestamp)
@@ -149,6 +149,7 @@ def history(device_id: str, limit: int=Query(default=100,ge=1,le=500), db: Sessi
 def water_now(device_id: str, payload: WaterIn, db: Session=Depends(get_db), user: User=Depends(current_user)):
     d=owned_device(db,user,device_id); latest=latest_reading(db,device_id)
     if not latest: raise HTTPException(409,"A sensor reading is required before watering")
+    if device_status(d) != "online": raise HTTPException(409,"Device is offline; watering was not queued")
     moisture=latest.soil_moisture
     fake=latest or Reading(device_id=device_id,event_id="manual",soil_moisture=moisture,temperature=20,humidity=50,light_level=50,timestamp=datetime.now(timezone.utc))
     event=decide_watering(db,d,fake,trigger_type="manual",duration_seconds=payload.duration_seconds)
@@ -175,8 +176,16 @@ def acknowledge(alert_id: int, db: Session=Depends(get_db), user: User=Depends(c
 @app.get("/api/devices/{device_id}/actions")
 def poll_actions(device_id: str, x_device_key: Optional[str]=Header(default=None), db: Session=Depends(get_db)):
     d=db.get(Device,device_id)
-    if not d or not x_device_key or hash_device_key(x_device_key)!=d.device_key_hash: raise HTTPException(401,"Invalid device credentials")
-    pending=db.scalars(select(WateringEvent).where(WateringEvent.device_id==device_id,WateringEvent.status=="queued").order_by(WateringEvent.created_at).limit(10)).all()
+    if not d or not x_device_key or not verify_device_key(x_device_key, d.device_key_hash): raise HTTPException(401,"Invalid device credentials")
+    now=datetime.now(timezone.utc)
+    queued=db.scalars(select(WateringEvent).where(WateringEvent.device_id==device_id,WateringEvent.status=="queued").order_by(WateringEvent.created_at).limit(20)).all()
+    pending=[]
+    for event in queued:
+        created=event.created_at if event.created_at.tzinfo else event.created_at.replace(tzinfo=timezone.utc)
+        if (now-created).total_seconds() > 120:
+            event.status="expired"
+        else:
+            pending.append(event)
     actions=[]
     for ev in pending:
         ev.status="delivered"
@@ -186,5 +195,5 @@ def poll_actions(device_id: str, x_device_key: Optional[str]=Header(default=None
 @app.post("/api/devices/{device_id}/heartbeat")
 def heartbeat(device_id: str, x_device_key: Optional[str]=Header(default=None), db: Session=Depends(get_db)):
     d=db.get(Device,device_id)
-    if not d or not x_device_key or hash_device_key(x_device_key)!=d.device_key_hash: raise HTTPException(401,"Invalid device credentials")
+    if not d or not x_device_key or not verify_device_key(x_device_key, d.device_key_hash): raise HTTPException(401,"Invalid device credentials")
     d.last_seen=datetime.now(timezone.utc); db.commit(); return {"ok":True,"server_time":d.last_seen.isoformat()}
