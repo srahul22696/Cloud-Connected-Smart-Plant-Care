@@ -2,6 +2,8 @@
 
 A full-stack IoT cloud-computing project that monitors plant conditions, stores time-stamped readings, raises alerts, and queues safe watering actions. It is fully usable without physical hardware: a Python simulator sends plausible sensor readings and responds to virtual pump commands.
 
+**Live demo:** [smart-plant-care-10ad.onrender.com](https://smart-plant-care-10ad.onrender.com/) · **GitHub:** [srahul22696/Cloud-Connected-Smart-Plant-Care](https://github.com/srahul22696/Cloud-Connected-Smart-Plant-Care)
+
 ## What it demonstrates
 
 - Authenticated users and owner-scoped plant/device access
