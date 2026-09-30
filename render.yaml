@@ -1,0 +1,31 @@
+databases:
+  - name: smart-plant-care-db
+    databaseName: plantcare
+    user: plantcare
+    plan: free
+    region: singapore
+
+services:
+  - type: web
+    name: smart-plant-care
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt && npm --prefix frontend ci && npm --prefix frontend run build
+    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smart-plant-care-db
+          property: connectionString
+      - key: APP_SECRET
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: SERVE_FRONTEND
+        value: "true"
+      - key: ALLOW_REGISTRATION
+        value: "true"
+      - key: CORS_ORIGINS
+        value: https://smart-plant-care.onrender.com

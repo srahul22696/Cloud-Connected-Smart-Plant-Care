@@ -12,6 +12,10 @@ from fastapi.exceptions import RequestValidationError
 
 from fastapi.responses import JSONResponse
 
+from pathlib import Path
+
+from fastapi.staticfiles import StaticFiles
+
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -383,3 +387,15 @@ def heartbeat(device_id: str, x_device_key: Optional[str]=Header(default=None), 
     if not d or not x_device_key or not verify_device_key(x_device_key, d.device_key_hash): raise HTTPException(401,"Invalid device credentials")
 
     d.last_seen=datetime.now(timezone.utc); db.commit(); return {"ok":True,"server_time":d.last_seen.isoformat()}
+
+
+# Serve the production Vite build from the same origin as the API on Render.
+# Register this after API routes so it cannot shadow them, and keep unknown API
+# paths as JSON 404s instead of returning the SPA document.
+frontend_dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+if settings.serve_frontend and frontend_dist.is_dir():
+    @app.api_route("/api/{unmatched_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], include_in_schema=False)
+    def unknown_api_path(unmatched_path: str):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

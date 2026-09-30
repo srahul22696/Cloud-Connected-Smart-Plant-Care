@@ -111,7 +111,7 @@ Plant profile defaults: succulent 20%, indoor 30%, herb 35%, tomato 40%. They ar
 
 ## Screenshots
 
-![Dashboard](screenshots/dashboard.png)
+![Dashboard](screenshots/plant-offline-dashboard.png)
 
 | Sign in | Add a plant | Quick-start guide |
 |---|---|---|
@@ -139,6 +139,10 @@ The automated API tests cover authentication, ownership isolation, unusual/out-o
 5. Deploy. Check `/api/health`, create the owner account, and add the device from the dashboard. Set the simulator's `API_URL` to the deployed origin and use the one-time device key. Disable public registration after the account is created if that fits your use.
 
 Vercel deployment needs your own GitHub, Vercel, and managed database accounts and environment values. No credentials or cloud resources are included in this repository. Do not use local SQLite for a persistent Vercel deployment.
+
+## Deploy to Render
+
+The included `render.yaml` deploys the React dashboard and FastAPI API together as one Render web service, backed by Render PostgreSQL. The root `.python-version` pins the runtime. To deploy, push the repository to GitHub, choose **New → Blueprint** in Render, and select this repository. Render generates `APP_SECRET` and connects `DATABASE_URL` to the database. After the first deploy, open the `onrender.com` URL, create an account, add a plant, and run the simulator with that URL and the one-time device key to populate live readings. The free web service can sleep when idle, and the free PostgreSQL database expires after 30 days; see [Render free instance limits](https://render.com/docs/free).
 
 ## Optional ESP32 hardware
 

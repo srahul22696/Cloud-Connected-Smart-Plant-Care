@@ -13,5 +13,6 @@ class Settings(BaseSettings):
     default_pump_seconds: int = 3
     watering_cooldown_seconds: int = 300
     app_env: str = "development"
+    serve_frontend: bool = False
 
 settings = Settings()
