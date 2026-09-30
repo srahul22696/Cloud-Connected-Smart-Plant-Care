@@ -76,3 +76,23 @@ def test_manual_water_rejected_when_device_offline(client,account,device,monkeyp
     monkeypatch.setattr(settings,'device_offline_seconds',0)
     result=client.post('/api/devices/PLANT-001/water',headers=account,json={'duration_seconds':3})
     assert result.status_code==409
+
+def test_delete_device_requires_auth_and_ownership(client,account,device):
+    assert client.delete('/api/devices/PLANT-001').status_code==401
+    other=client.post('/api/auth/register',json={'email':'other@example.com','password':'long-password-456'}).json()['access_token']
+    other_headers={'Authorization':f'Bearer {other}'}
+    assert client.delete('/api/devices/PLANT-001',headers=other_headers).status_code==404
+    assert client.get('/api/devices/PLANT-001',headers=account).status_code==200
+    assert client.delete('/api/devices/PLANT-001',headers=account).status_code==204
+    assert client.get('/api/devices/PLANT-001',headers=account).status_code==404
+    assert client.delete('/api/devices/PLANT-001',headers=account).status_code==404
+
+def test_delete_device_removes_its_data_and_key(client,account,device):
+    client.post('/api/sensors/data',headers=device['headers'],json=sample(soil_moisture=10))
+    assert client.delete('/api/devices/PLANT-001',headers=account).status_code==204
+    assert client.post('/api/sensors/data',headers=device['headers'],json=sample(event_id='reading-000009')).status_code==401
+    again=client.post('/api/devices',headers=account,json={'id':'PLANT-001','plant_name':'Tomato','plant_type':'tomato'})
+    assert again.status_code==201
+    assert client.get('/api/devices/PLANT-001/history',headers=account).json()==[]
+    assert client.get('/api/devices/PLANT-001/watering-history',headers=account).json()==[]
+    assert client.get('/api/alerts',headers=account).json()==[]

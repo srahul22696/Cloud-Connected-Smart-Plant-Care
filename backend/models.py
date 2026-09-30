@@ -27,6 +27,9 @@ class Device(Base):
     last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     owner: Mapped[User] = relationship(back_populates="devices")
+    readings: Mapped[list["Reading"]] = relationship(cascade="all, delete-orphan")
+    watering_events: Mapped[list["WateringEvent"]] = relationship(cascade="all, delete-orphan")
+    alerts: Mapped[list["Alert"]] = relationship(cascade="all, delete-orphan")
 
 class Reading(Base):
     __tablename__ = "readings"
