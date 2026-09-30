@@ -111,7 +111,11 @@ Plant profile defaults: succulent 20%, indoor 30%, herb 35%, tomato 40%. They ar
 
 ## Screenshots
 
-See [`screenshots/README.md`](screenshots/README.md) for the capture checklist. The screenshot can be added after running the simulator, with account and device credentials removed.
+![Dashboard](screenshots/dashboard.png)
+
+| Sign in | Add a plant | Quick-start guide |
+|---|---|---|
+| ![Sign in](screenshots/sign-in.png) | ![Add plant](screenshots/add-plant.png) | ![Quick-start guide](screenshots/quick-start-guide.png) |
 
 ## GitHub and social drafts
 
