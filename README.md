@@ -69,7 +69,7 @@ Open http://localhost:5173, create an account, and add a plant. The device key i
 DEVICE_ID=PLANT-001 DEVICE_KEY='paste-the-one-time-key' API_URL=http://127.0.0.1:8000 INTERVAL_SECONDS=10 python -m sensor_simulator.simulator
 ```
 
-Use the exact device ID entered in the dashboard. Soil moisture drifts down gradually; a reading below the chosen target queues a three-second virtual pump pulse, subject to a five-minute cooldown. The simulator polls the secure device action endpoint and increases its soil value after receiving the pulse.
+Use the exact device ID entered in the dashboard. To remove a plant, select it and use **Remove plant** on the dashboard; its device key stops working immediately. Soil moisture drifts down gradually; a reading below the chosen target queues a three-second virtual pump pulse, subject to a five-minute cooldown. The simulator polls the secure device action endpoint and increases its soil value after receiving the pulse.
 
 For offline-only simulator output (no API calls), use `OFFLINE_MODE=true` with `DEVICE_ID` and run the same command. To reset the local demo database, stop the backend and remove `plantcare.db`.
 
@@ -83,6 +83,7 @@ All user endpoints require `Authorization: Bearer <access_token>`. Device endpoi
 | GET | `/api/auth/me` | Current account |
 | GET/POST | `/api/devices` | List owned devices / create device (returns key once) |
 | GET | `/api/devices/{id}` | Device state and latest reading |
+| DELETE | `/api/devices/{id}` | Permanently delete an owned device and its readings, watering events and alerts (204) |
 | POST | `/api/sensors/data` | Authenticated, validated, idempotent reading ingestion |
 | GET | `/api/devices/{id}/latest` | Latest reading |
 | GET | `/api/devices/{id}/history?limit=100` | Bounded time-series history |
@@ -123,7 +124,7 @@ pytest -q
 cd frontend && npm run build
 ```
 
-The automated API tests cover authentication, ownership isolation, unusual/out-of-range values, timestamp rules, duplicate delivery, watering thresholds/cooldown, action one-time delivery, low tank blocking, threshold updates, manual watering, and alert acknowledgement.
+The automated API tests cover authentication, ownership isolation, unusual/out-of-range values, timestamp rules, duplicate delivery, watering thresholds/cooldown, action one-time delivery, low tank blocking, threshold updates, manual watering, alert acknowledgement, and device deletion (authentication, ownership, and cascade cleanup).
 
 ## Deploy to Vercel
 
