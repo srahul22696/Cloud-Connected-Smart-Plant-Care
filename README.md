@@ -65,13 +65,13 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173, create an account, and add a plant. The device key is shown once and copied to the clipboard. In a third terminal, with the Python environment active, start the virtual sensor using that key:
+Open http://localhost:5173, create an account, and add a plant. The **Start virtual sensor** option is enabled by default, so the dashboard immediately begins generating clearly identified demo readings and chart fluctuations without hardware, a device key, or another terminal. Use the dashboard control to pause or resume it. The one-time device key is still copied for optional ESP32 hardware.
 
 ```bash
 DEVICE_ID=PLANT-001 DEVICE_KEY='paste-the-one-time-key' API_URL=http://127.0.0.1:8000 INTERVAL_SECONDS=10 python -m sensor_simulator.simulator
 ```
 
-Use the exact device ID entered in the dashboard. To remove a plant, select it and use **Remove plant** on the dashboard; its device key stops working immediately. Soil moisture drifts down gradually; a reading below the chosen target queues a three-second virtual pump pulse, subject to a five-minute cooldown. The simulator polls the secure device action endpoint and increases its soil value after receiving the pulse.
+For hardware simulation outside the dashboard, use the Python simulator command above with the exact device ID and one-time device key. To remove a plant, select it and use **Remove plant** on the dashboard; its device key stops working immediately. Soil moisture drifts down gradually; a reading below the chosen target queues a bounded virtual pump pulse, subject to a cooldown.
 
 For offline-only simulator output (no API calls), use `OFFLINE_MODE=true` with `DEVICE_ID` and run the same command. To reset the local demo database, stop the backend and remove `plantcare.db`.
 
@@ -85,6 +85,8 @@ All user endpoints require `Authorization: Bearer <access_token>`. Device endpoi
 | GET | `/api/auth/me` | Current account |
 | GET/POST | `/api/devices` | List owned devices / create device (returns key once) |
 | GET | `/api/devices/{id}` | Device state and latest reading |
+| PUT | `/api/devices/{id}/virtual-sensor` | Start or pause the authenticated demo sensor |
+| POST | `/api/devices/{id}/virtual-sensor/tick` | Generate a rate-limited demo reading |
 | DELETE | `/api/devices/{id}` | Permanently delete an owned device and its readings, watering events and alerts (204) |
 | POST | `/api/sensors/data` | Authenticated, validated, idempotent reading ingestion |
 | GET | `/api/devices/{id}/latest` | Latest reading |
@@ -130,7 +132,7 @@ pytest -q
 cd frontend && npm run build
 ```
 
-The automated API tests cover authentication, ownership isolation, unusual/out-of-range values, timestamp rules, duplicate delivery, watering thresholds/cooldown, action one-time delivery, low tank blocking, threshold updates, manual watering, alert acknowledgement, and device deletion (authentication, ownership, and cascade cleanup).
+The automated API tests cover authentication, ownership isolation, unusual/out-of-range values, timestamp rules, duplicate delivery, virtual sensor start/pause/resume, watering thresholds/cooldown, action one-time delivery, low tank blocking, threshold updates, manual watering, alert acknowledgement, and device deletion (authentication, ownership, and cascade cleanup).
 
 ## Deploy to Vercel
 
@@ -144,7 +146,7 @@ Vercel deployment needs your own GitHub, Vercel, and managed database accounts a
 
 ## Deploy to Render
 
-The included `render.yaml` deploys the React dashboard and FastAPI API together as one Render web service, backed by Render PostgreSQL. The root `.python-version` pins the runtime. To deploy, push the repository to GitHub, choose **New → Blueprint** in Render, and select this repository. Render generates `APP_SECRET` and connects `DATABASE_URL` to the database. After the first deploy, open the `onrender.com` URL, create an account, add a plant, and run the simulator with that URL and the one-time device key to populate live readings. The free web service can sleep when idle, and the free PostgreSQL database expires after 30 days; see [Render free instance limits](https://render.com/docs/free).
+The included `render.yaml` deploys the React dashboard and FastAPI API together as one Render web service, backed by Render PostgreSQL. The root `.python-version` pins the runtime. To deploy, push the repository to GitHub, choose **New → Blueprint** in Render, and select this repository. Render generates `APP_SECRET` and connects `DATABASE_URL` to the database. After the first deploy, open the `onrender.com` URL, create an account, add a plant, and leave **Start virtual sensor** enabled to see readings populate without setup. The free web service can sleep when idle, and the free PostgreSQL database expires after 30 days; see [Render free instance limits](https://render.com/docs/free).
 
 ## Optional ESP32 hardware
 

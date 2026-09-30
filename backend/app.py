@@ -4,6 +4,12 @@ from contextlib import asynccontextmanager
 
 from datetime import datetime, timezone
 
+from datetime import timedelta
+
+import math
+
+import random
+
 import logging
 
 from fastapi import FastAPI, Depends, HTTPException, Header, status, Query, Request
@@ -30,9 +36,9 @@ from backend.config import settings
 
 from backend.database import Base, engine, get_db
 
-from backend.models import User, Device, Reading, WateringEvent, Alert
+from backend.models import User, Device, Reading, WateringEvent, Alert, VirtualSensorSession
 
-from backend.schemas import RegisterIn, LoginIn, TokenOut, DeviceCreate, DeviceOut, ThresholdIn, AutoWaterIn, ReadingIn, WaterIn
+from backend.schemas import RegisterIn, LoginIn, TokenOut, DeviceCreate, DeviceOut, ThresholdIn, AutoWaterIn, ReadingIn, WaterIn, VirtualSensorIn
 
 from backend.security import hash_password, verify_password, issue_token, read_token, new_device_key, hash_device_key, verify_device_key
 
@@ -163,7 +169,8 @@ def devices(db: Session = Depends(get_db), user: User = Depends(current_user)):
 
             for a in db.scalars(select(Alert).where(Alert.device_id==d.id,Alert.alert_type=="device_offline",Alert.acknowledged.is_(False))).all(): a.acknowledged=True
 
-        result.append({**DeviceOut.model_validate(d).model_dump(mode="json"),"status":status_now,"latest":reading_json(latest_reading(db,d.id))})
+        virtual_sensor = db.get(VirtualSensorSession, d.id)
+        result.append({**DeviceOut.model_validate(d).model_dump(mode="json"),"status":status_now,"latest":reading_json(latest_reading(db,d.id)),"virtual_sensor_running":bool(virtual_sensor and virtual_sensor.enabled)})
 
     db.commit()
 
@@ -177,6 +184,88 @@ def reading_json(r):
     return {"soil_moisture":r.soil_moisture,"temperature":r.temperature,"humidity":r.humidity,"light_level":r.light_level,"water_tank_level":r.water_tank_level,"timestamp":r.timestamp.isoformat()}
 
 
+def process_reading(db: Session, device: Device, row: Reading):
+
+    if row.soil_moisture < device.threshold:
+
+        add_alert_once(db,device.id,"low_moisture","warning",f"{device.plant_name} moisture is below its {device.threshold:g}% threshold.")
+
+    else:
+
+        for alert in db.scalars(select(Alert).where(Alert.device_id==device.id,Alert.alert_type=="low_moisture",Alert.acknowledged.is_(False))).all(): alert.acknowledged=True
+
+    if row.temperature > 38:
+
+        add_alert_once(db,device.id,"high_temperature","warning",f"{device.plant_name} temperature is unusually high ({row.temperature:g} °C).")
+
+    else:
+
+        for alert in db.scalars(select(Alert).where(Alert.device_id==device.id,Alert.alert_type=="high_temperature",Alert.acknowledged.is_(False))).all(): alert.acknowledged=True
+
+    return decide_watering(db,device,row)
+
+
+def generate_virtual_reading(db: Session, device: Device, session: VirtualSensorSession):
+
+    now = datetime.now(timezone.utc)
+
+    last_generated = session.last_generated_at
+
+    if last_generated is not None:
+
+        if last_generated.tzinfo is None: last_generated = last_generated.replace(tzinfo=timezone.utc)
+
+        if (now-last_generated).total_seconds() < 8: return False
+
+    # Simulate delivery of queued pump actions and age out actions that sat too long.
+
+    for event in db.scalars(select(WateringEvent).where(WateringEvent.device_id==device.id,WateringEvent.status=="queued").order_by(WateringEvent.created_at).limit(20)).all():
+
+        created = event.created_at if event.created_at.tzinfo else event.created_at.replace(tzinfo=timezone.utc)
+
+        if (now-created).total_seconds() > 120: event.status="expired"
+
+        else:
+
+            event.status="delivered"
+
+            session.soil_moisture = min(100,session.soil_moisture+event.duration_seconds*2.4)
+
+    rng = random.SystemRandom()
+
+    session.soil_moisture = round(max(0,min(100,session.soil_moisture-rng.uniform(0.25,1.35))),1)
+
+    session.temperature = round(max(-20,min(70,session.temperature+rng.uniform(-0.55,0.55))),1)
+
+    session.humidity = round(max(0,min(100,session.humidity+rng.uniform(-2.2,2.2))),1)
+
+    daylight = max(0,math.sin(((now.hour-6)+now.minute/60)/12*math.pi))
+
+    session.light_level = round(max(0,min(100,daylight*82+rng.uniform(-5,5))),1)
+
+    row = Reading(device_id=device.id,event_id=f"virtual-{now.timestamp():.6f}",soil_moisture=session.soil_moisture,temperature=session.temperature,humidity=session.humidity,light_level=session.light_level,water_tank_level=session.water_tank_level,timestamp=now)
+
+    db.add(row)
+
+    device.last_seen=now
+
+    action=process_reading(db,device,row)
+
+    if action:
+
+        action.status="delivered"
+
+        session.soil_moisture=round(min(100,session.soil_moisture+action.duration_seconds*2.4),1)
+
+    session.last_generated_at=now
+
+    db.commit()
+
+    log.info("virtual_reading_generated device=%s event=%s",device.id,row.event_id)
+
+    return True
+
+
 @app.post("/api/devices", status_code=201)
 
 def create_device(payload: DeviceCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
@@ -185,11 +274,59 @@ def create_device(payload: DeviceCreate, db: Session = Depends(get_db), user: Us
 
     key = new_device_key()
 
-    device = Device(id=payload.id, owner_id=user.id, plant_name=payload.plant_name, plant_type=payload.plant_type, location=payload.location, threshold=payload.threshold if payload.threshold is not None else PROFILE_THRESHOLDS[payload.plant_type], auto_water=payload.auto_water, device_key_hash=hash_device_key(key))
+    threshold=payload.threshold if payload.threshold is not None else PROFILE_THRESHOLDS[payload.plant_type]
+
+    device = Device(id=payload.id, owner_id=user.id, plant_name=payload.plant_name, plant_type=payload.plant_type, location=payload.location, threshold=threshold, auto_water=payload.auto_water, device_key_hash=hash_device_key(key))
+
+    if payload.virtual_sensor:
+
+        db.add(VirtualSensorSession(device_id=device.id,enabled=True,soil_moisture=min(98,max(45,threshold+18))))
 
     db.add(device); db.commit()
 
-    return {"device":DeviceOut.model_validate(device).model_dump(mode="json"),"device_key":key,"warning":"Copy this key now. It cannot be retrieved later."}
+    return {"device":DeviceOut.model_validate(device).model_dump(mode="json"),"device_key":key,"virtual_sensor_running":payload.virtual_sensor,"warning":"Copy this key now. It cannot be retrieved later."}
+
+
+@app.put("/api/devices/{device_id}/virtual-sensor")
+
+def set_virtual_sensor(device_id: str, payload: VirtualSensorIn, db: Session=Depends(get_db), user: User=Depends(current_user)):
+
+    device=owned_device(db,user,device_id)
+
+    session=db.get(VirtualSensorSession,device.id)
+
+    if session is None:
+
+        session=VirtualSensorSession(device_id=device.id,soil_moisture=min(98,max(45,device.threshold+18)))
+
+        db.add(session)
+
+    session.enabled=payload.enabled
+
+    if payload.enabled:
+        # An explicit start or resume should produce a sample immediately.
+        session.last_generated_at=None
+
+    db.commit()
+
+    generated=generate_virtual_reading(db,device,session) if payload.enabled else False
+
+    return {"device_id":device.id,"virtual_sensor_running":session.enabled,"reading_generated":generated}
+
+
+@app.post("/api/devices/{device_id}/virtual-sensor/tick")
+
+def virtual_sensor_tick(device_id: str, db: Session=Depends(get_db), user: User=Depends(current_user)):
+
+    device=owned_device(db,user,device_id)
+
+    session=db.get(VirtualSensorSession,device.id)
+
+    if session is None or not session.enabled: return {"virtual_sensor_running":False,"reading_generated":False}
+
+    generated=generate_virtual_reading(db,device,session)
+
+    return {"virtual_sensor_running":True,"reading_generated":generated}
 
 
 @app.get("/api/devices/{device_id}")
@@ -198,7 +335,8 @@ def get_device(device_id: str, db: Session = Depends(get_db), user: User = Depen
 
     d=owned_device(db,user,device_id)
 
-    return {**DeviceOut.model_validate(d).model_dump(mode="json"),"status":device_status(d),"latest":reading_json(latest_reading(db,d.id))}
+    virtual_sensor=db.get(VirtualSensorSession,d.id)
+    return {**DeviceOut.model_validate(d).model_dump(mode="json"),"status":device_status(d),"latest":reading_json(latest_reading(db,d.id)),"virtual_sensor_running":bool(virtual_sensor and virtual_sensor.enabled)}
 
 
 @app.delete("/api/devices/{device_id}", status_code=204)
@@ -244,19 +382,7 @@ def ingest(payload: ReadingIn, x_device_key: Optional[str] = Header(default=None
 
     db.add(row); d.last_seen=datetime.now(timezone.utc)
 
-    if row.soil_moisture < d.threshold: add_alert_once(db,d.id,"low_moisture","warning",f"{d.plant_name} moisture is below its {d.threshold:g}% threshold.")
-
-    else:
-
-        for a in db.scalars(select(Alert).where(Alert.device_id==d.id,Alert.alert_type=="low_moisture",Alert.acknowledged.is_(False))).all(): a.acknowledged=True
-
-    if row.temperature > 38: add_alert_once(db,d.id,"high_temperature","warning",f"{d.plant_name} temperature is unusually high ({row.temperature:g} °C).")
-
-    else:
-
-        for a in db.scalars(select(Alert).where(Alert.device_id==d.id,Alert.alert_type=="high_temperature",Alert.acknowledged.is_(False))).all(): a.acknowledged=True
-
-    action=decide_watering(db,d,row)
+    action=process_reading(db,d,row)
 
     try: db.commit()
 

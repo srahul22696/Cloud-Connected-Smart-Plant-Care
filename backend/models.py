@@ -30,6 +30,19 @@ class Device(Base):
     readings: Mapped[list["Reading"]] = relationship(cascade="all, delete-orphan")
     watering_events: Mapped[list["WateringEvent"]] = relationship(cascade="all, delete-orphan")
     alerts: Mapped[list["Alert"]] = relationship(cascade="all, delete-orphan")
+    virtual_sensor: Mapped[Optional["VirtualSensorSession"]] = relationship(back_populates="device", cascade="all, delete-orphan", uselist=False)
+
+class VirtualSensorSession(Base):
+    __tablename__ = "virtual_sensor_sessions"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    soil_moisture: Mapped[float] = mapped_column(Float, default=55)
+    temperature: Mapped[float] = mapped_column(Float, default=24)
+    humidity: Mapped[float] = mapped_column(Float, default=55)
+    light_level: Mapped[float] = mapped_column(Float, default=45)
+    water_tank_level: Mapped[float] = mapped_column(Float, default=100)
+    device: Mapped[Device] = relationship(back_populates="virtual_sensor")
 
 class Reading(Base):
     __tablename__ = "readings"

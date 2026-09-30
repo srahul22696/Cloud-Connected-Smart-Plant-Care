@@ -31,6 +31,7 @@ class DeviceCreate(BaseModel):
     location: str = Field(default="", max_length=100)
     threshold: Optional[float] = Field(default=None, ge=5, le=90)
     auto_water: bool = True
+    virtual_sensor: bool = False
     @field_validator("plant_name", "location")
     @classmethod
     def clean_text(cls, v):
@@ -42,6 +43,9 @@ class ThresholdIn(BaseModel):
     threshold: float = Field(ge=5, le=90)
 
 class AutoWaterIn(BaseModel):
+    enabled: bool
+
+class VirtualSensorIn(BaseModel):
     enabled: bool
 
 class ReadingIn(BaseModel):

@@ -96,3 +96,32 @@ def test_delete_device_removes_its_data_and_key(client,account,device):
     assert client.get('/api/devices/PLANT-001/history',headers=account).json()==[]
     assert client.get('/api/devices/PLANT-001/watering-history',headers=account).json()==[]
     assert client.get('/api/alerts',headers=account).json()==[]
+
+def test_virtual_sensor_generates_readings_and_can_be_paused_or_resumed(client,account):
+    created=client.post('/api/devices',headers=account,json={'id':'VIRTUAL-1','plant_name':'Demo mint','plant_type':'herb','virtual_sensor':True})
+    assert created.status_code==201
+    assert created.json()['virtual_sensor_running'] is True
+    headers=account
+
+    tick=client.post('/api/devices/VIRTUAL-1/virtual-sensor/tick',headers=headers)
+    assert tick.status_code==200 and tick.json()['reading_generated'] is True
+    history=client.get('/api/devices/VIRTUAL-1/history',headers=headers).json()
+    assert len(history)==1
+    device=client.get('/api/devices/VIRTUAL-1',headers=headers).json()
+    assert device['status']=='online'
+    assert device['virtual_sensor_running'] is True
+
+    paused=client.put('/api/devices/VIRTUAL-1/virtual-sensor',headers=headers,json={'enabled':False})
+    assert paused.json()['virtual_sensor_running'] is False
+    assert client.post('/api/devices/VIRTUAL-1/virtual-sensor/tick',headers=headers).json()['reading_generated'] is False
+    assert len(client.get('/api/devices/VIRTUAL-1/history',headers=headers).json())==1
+
+    resumed=client.put('/api/devices/VIRTUAL-1/virtual-sensor',headers=headers,json={'enabled':True})
+    assert resumed.json()['reading_generated'] is True
+    assert len(client.get('/api/devices/VIRTUAL-1/history',headers=headers).json())==2
+
+def test_virtual_sensor_requires_owner_authentication(client,account):
+    client.post('/api/devices',headers=account,json={'id':'VIRTUAL-2','plant_name':'Demo fern','plant_type':'indoor','virtual_sensor':True})
+    assert client.post('/api/devices/VIRTUAL-2/virtual-sensor/tick').status_code==401
+    other=client.post('/api/auth/register',json={'email':'other@example.com','password':'long-password-456'}).json()['access_token']
+    assert client.put('/api/devices/VIRTUAL-2/virtual-sensor',headers={'Authorization':f'Bearer {other}'},json={'enabled':False}).status_code==404
